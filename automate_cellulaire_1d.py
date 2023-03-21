@@ -2,6 +2,12 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 import sys
+from mpi4py import MPI
+
+#Paramètres de parallélisation
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
 nombre_cas   : int = 256
 nb_cellules  : int = 360  # Cellules fantomes
