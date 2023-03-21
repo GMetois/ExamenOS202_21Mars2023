@@ -4,4 +4,10 @@ import matplotlib.pyplot as plt
 import sys
 from mpi4py import MPI
 
-4*cells[iter-1, 0:-2]+ 2*cells[iter-1, 1:-1]+ cells[iter-1, 2:]
+A = np.array([[1,1],[2,2]])
+
+aaa = np.shape(A)
+
+test = aaa[1]
+
+print(np.shape(A)[1])

@@ -5,7 +5,14 @@ import time
 import matplotlib.pyplot as plt
 from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
+from mpi4py import MPI
 
+#Paramètres de parallélisation
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+print("Hello from rank", rank)
 
 class droite:
     def __init__( self, p1, p2):
@@ -62,39 +69,48 @@ if len(sys.argv) > 2:
 
 enveloppe = None
 nuage     = None
+total_nuage = nuage = np.array(np.array([[resolution_x * i * math.cos(48371.*i)/taille_nuage for i in range(taille_nuage)], [resolution_y * math.sin(50033./(i+1.)) for i in range(taille_nuage)]], dtype=np.float64).T)
+nuage_share = int(np.floor(taille_nuage/size))
+nuage_share_extended = nuage_share + (taille_nuage - nuage_share*size)
 
-for r in range(nbre_repet):
-    t1 = time.time()
-    nuage = np.array(np.array([[resolution_x * i * math.cos(48371.*i)/taille_nuage for i in range(taille_nuage)], [resolution_y * math.sin(50033./(i+1.)) for i in range(taille_nuage)]], dtype=np.float64).T)
-    t2 = time.time()
-    elapsed_generation += t2 - t1
+if(rank == size-1):
+    nuage_share = nuage_share_extended
 
-    # Calcul de l'enveloppe convexe :
-    t1 = time.time()
-    enveloppe = calcul_enveloppe(nuage)
-    t2 = time.time()
-    elapsed_convexhull += t2 - t1
+    for r in range(nbre_repet):
+        t1 = time.time()
+        nuage = np.array(np.array([[resolution_x * i * math.cos(48371.*i)/taille_nuage for i in range(rank*nuage_share, (rank+1)*nuage_share, 1)], [resolution_y * math.sin(50033./(i+1.)) for i in range(rank*nuage_share, (rank+1)*nuage_share, 1)]], dtype=np.float64).T)
+        t2 = time.time()
+        elapsed_generation += t2 - t1
 
-print(f"Temps pris pour la generation d'un nuage de points : {elapsed_generation/nbre_repet}")
-print(f"Temps pris pour le calcul de l'enveloppe convexe : {elapsed_convexhull/nbre_repet}")
-print(f"Temps total : {sum((elapsed_generation, elapsed_convexhull))/nbre_repet}")
+        # Calcul de l'enveloppe convexe :
+        t1 = time.time()
+        enveloppe = calcul_enveloppe(nuage)
+        t2 = time.time()
+        elapsed_convexhull += t2 - t1
+
+    buffer_enveloppe = comm.allgather(enveloppe)
+    total_enveloppe = buffer_enveloppe[0]
+    for i in buffer_enveloppe[1:] :
+        total_enveloppe = np.concatenate((total_enveloppe,i))
+    total_enveloppe = calcul_enveloppe(total_enveloppe)
+
+    print(f"Temps pris pour la generation d'un nuage de points : {elapsed_generation/nbre_repet}")
+    print(f"Temps pris pour le calcul de l'enveloppe convexe : {elapsed_convexhull/nbre_repet}")
+    print(f"Temps total : {sum((elapsed_generation, elapsed_convexhull))/nbre_repet}")
 
 
-
-# affichage du nuage :
-plt.scatter(nuage[:,0], nuage[:,1])
-for i in range(len(enveloppe[:])-1):
-    plt.plot([enveloppe[i,0],enveloppe[i+1,0]], [enveloppe[i,1], enveloppe[i+1,1]], 'bo', linestyle="-")
-plt.show()
-
-
-
-# validation de non-regression :
-if (taille_nuage == 55440):
-    ref = np.loadtxt("enveloppe_convexe_55440.ref")
-    try:
-        np.testing.assert_allclose(ref, enveloppe)
-        print("Verification pour 55440 points: OK")
-    except AssertionError as e:
-        print(e)
-        print("Verification pour 55440 points: FAILED")
+if(rank==0) :
+    # affichage du nuage :
+    plt.scatter(total_nuage[:,0], total_nuage[:,1])
+    for i in range(len(total_enveloppe[:])-1):
+        plt.plot([total_enveloppe[i,0],total_enveloppe[i+1,0]], [total_enveloppe[i,1], total_enveloppe[i+1,1]], 'bo', linestyle="-")
+    plt.show()
+    # validation de non-regression :
+    if (taille_nuage == 55440):
+        ref = np.loadtxt("enveloppe_convexe_55440.ref")
+        try:
+            np.testing.assert_allclose(ref, total_enveloppe)
+            print("Verification pour 55440 points: OK")
+        except AssertionError as e:
+            print(e)
+            print("Verification pour 55440 points: FAILED")
